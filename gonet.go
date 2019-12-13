@@ -78,6 +78,8 @@ func (g *Gonet) Connect(retries int) error {
 	g.InputChan = make(chan *string)
 	g.StopChan = make(chan struct{})
 	g.session = sshSession
+	// This is here because of gets rid of
+	// the --More-- "prompt" for read-outs
 	g.stdin.Write([]byte("terminal len 0\n"))
 	return nil
 }
@@ -120,18 +122,12 @@ func (g *Gonet) exec(cmd string) (string, error) {
 					continue
 				}
 				if g.Echo == false {
-					result = strings.Replace(*output, cmd, "", 1)
-					begPrmptRe := regexp.MustCompile(`#\n`)
-					begPrmpt := begPrmptRe.FindIndex([]byte(result))
-					if len(begPrmpt) > 0 {
-						result = result[begPrmpt[0]+2:]
+					result = *output
+					cmdRe := regexp.MustCompile(cmd)
+					cmdIdx := cmdRe.FindIndex([]byte(result))
+					if len(cmdIdx) == 2 {
+						result = result[cmdIdx[1]+1:]
 					}
-					lastlineRe := regexp.MustCompile(`\S+#|\S+>`)
-					last := lastlineRe.FindIndex([]byte(result))
-					if len(last) > 0 {
-						result = result[0 : last[0]-1]
-					}
-
 				} else {
 					result = *output
 				}
@@ -155,7 +151,8 @@ func (g *Gonet) exec(cmd string) (string, error) {
 func (g *Gonet) readln(r io.Reader) {
 	var re *regexp.Regexp
 	if g.Prompt == "" {
-		re = regexp.MustCompile("[[:alnum:]]>.?$|[[:alnum:]]#.?$")
+		regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
+		re = regexp.MustCompile(regex)
 	} else {
 		re = regexp.MustCompile(g.Prompt + ".*?#.?$")
 	}
