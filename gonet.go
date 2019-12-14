@@ -72,7 +72,7 @@ func (g *Gonet) Connect(retries int) error {
 	g.Echo = false
 	// We might need to set this higher for some devices
 	if g.Timeout == 0 {
-		g.Timeout = 25
+		g.Timeout = 45
 	}
 	sshSession.Shell()
 	g.InputChan = make(chan *string)
