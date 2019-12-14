@@ -128,9 +128,7 @@ func (g *Gonet) exec(cmd string) (string, error) {
 					result = *output
 					cmdRe := regexp.MustCompile(cmd)
 					cmdIdx := cmdRe.FindIndex([]byte(result))
-					if len(cmdIdx) == 2 {
-						result = result[cmdIdx[1]+1:]
-					}
+					result = result[cmdIdx[0]+1:]
 				} else {
 					result = *output
 				}
