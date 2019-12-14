@@ -100,6 +100,9 @@ func (g *Gonet) SendCmd(cmd string) (string, error) {
 		return output, err
 	}
 	output += out
+	outputLines := strings.Split(output, "\n")
+	outputLines = outputLines[1 : len(outputLines)-1]
+	output = strings.Join(outputLines, "\n")
 	return output, nil
 }
 
@@ -150,6 +153,8 @@ func (g *Gonet) exec(cmd string) (string, error) {
 
 func (g *Gonet) readln(r io.Reader) {
 	var re *regexp.Regexp
+	// Setup how to find the Prompt in order
+	// Pass Data to our Input Channel
 	if g.Prompt == "" {
 		regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
 		re = regexp.MustCompile(regex)
@@ -158,6 +163,7 @@ func (g *Gonet) readln(r io.Reader) {
 	}
 	buf := make([]byte, 10000)
 	input := ""
+	// Read Data into the Buffer until All Data is Passed
 	for {
 		n, err := r.Read(buf)
 		if err != nil {
