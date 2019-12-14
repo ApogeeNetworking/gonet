@@ -75,7 +75,7 @@ func (g *Gonet) Connect(retries int) error {
 		g.Timeout = 45
 	}
 	sshSession.Shell()
-	g.InputChan = make(chan *string)
+	g.InputChan = make(chan *string, 20)
 	g.StopChan = make(chan struct{})
 	g.session = sshSession
 	// This is here because of gets rid of
