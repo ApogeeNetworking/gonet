@@ -113,7 +113,7 @@ func (g *Gonet) exec(cmd string) (string, error) {
 	g.stdin.Write([]byte(cmd + "\n"))
 	// Pause the thread while the Reader prepares
 	// to rcv from the Writer
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	go g.readln(bufOutput)
 
