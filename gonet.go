@@ -113,7 +113,7 @@ func (g *Gonet) exec(cmd string) (string, error) {
 	g.stdin.Write([]byte(cmd + "\n"))
 	// Pause the thread while the Reader prepares
 	// to rcv from the Writer
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	go g.readln(bufOutput)
 
@@ -125,10 +125,12 @@ func (g *Gonet) exec(cmd string) (string, error) {
 					continue
 				}
 				if g.Echo == false {
-					result = *output
+					result = strings.Replace(*output, cmd, "", 0)
 					cmdRe := regexp.MustCompile(cmd)
 					cmdIdx := cmdRe.FindIndex([]byte(result))
-					result = result[cmdIdx[0]+1:]
+					if len(cmdIdx) > 0 {
+						result = result[cmdIdx[0]+1:]
+					}
 				} else {
 					result = *output
 				}
