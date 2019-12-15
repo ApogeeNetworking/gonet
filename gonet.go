@@ -125,9 +125,8 @@ func (g *Gonet) exec(cmd string) (string, error) {
 					continue
 				}
 				if g.Echo == false {
-					result = strings.Replace(*output, cmd, "", 0)
-
-					cmdRe := regexp.MustCompile(`terminal\slen\s\d`)
+					result = *output
+					cmdRe := regexp.MustCompile(`term\slen\s\d`)
 					cmdIdx := cmdRe.FindIndex([]byte(result))
 					if len(cmdIdx) > 0 {
 						result = result[cmdIdx[0]+1:]
