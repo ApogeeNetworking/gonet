@@ -72,7 +72,11 @@ func (g *Gonet) Connect(retries int) error {
 	g.Echo = false
 	// We might need to set this higher for some devices
 	if g.Timeout == 0 {
-		g.Timeout = 45
+		if g.Model == "3850" {
+			g.Timeout = 60
+		} else {
+			g.Timeout = 30
+		}
 	}
 	sshSession.Shell()
 	g.InputChan = make(chan *string, 10)
@@ -113,7 +117,7 @@ func (g *Gonet) exec(cmd string) (string, error) {
 	g.stdin.Write([]byte(cmd + "\n"))
 	// Pause the thread while the Reader prepares
 	// to rcv from the Writer
-	time.Sleep(3 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	go g.readln(bufOutput)
 
@@ -126,10 +130,10 @@ func (g *Gonet) exec(cmd string) (string, error) {
 				}
 				if g.Echo == false {
 					result = *output
-					cmdRe := regexp.MustCompile(`term\slen\s\d`)
-					cmdIdx := cmdRe.FindIndex([]byte(result))
-					if len(cmdIdx) > 0 {
-						result = result[cmdIdx[0]+1:]
+					termLenRe := regexp.MustCompile(`term\slen\s\d`)
+					termLenIdx := termLenRe.FindIndex([]byte(result))
+					if len(termLenIdx) > 0 {
+						result = result[termLenIdx[1]+1:]
 					}
 				} else {
 					result = *output
