@@ -6,6 +6,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -98,6 +99,9 @@ func (g *Gonet) Close() {
 
 // SendCmd to a Device (sh ip int b)
 func (g *Gonet) SendCmd(cmd string) (string, error) {
+	var mu sync.Mutex
+	mu.Lock()
+	defer mu.Unlock()
 	output := ""
 	out, err := g.exec(cmd)
 	if err != nil {
