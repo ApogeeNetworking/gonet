@@ -105,8 +105,10 @@ func (g *Gonet) SendCmd(cmd string) (string, error) {
 	}
 	output += out
 	outputLines := strings.Split(output, "\n")
-	outputLines = outputLines[1 : len(outputLines)-1]
-	output = strings.Join(outputLines, "\n")
+	if len(outputLines) > 2 {
+		outputLines = outputLines[1 : len(outputLines)-1]
+		output = strings.Join(outputLines, "\n")
+	}
 	return output, nil
 }
 
@@ -117,7 +119,7 @@ func (g *Gonet) exec(cmd string) (string, error) {
 	g.stdin.Write([]byte(cmd + "\n"))
 	// Pause the thread while the Reader prepares
 	// to rcv from the Writer
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	go g.readln(bufOutput)
 
