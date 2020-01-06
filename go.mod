@@ -1,4 +1,4 @@
-module github.com/drkchiloll/gonet
+module github.com/drkchiloll/gonet v0.1.0
 
 go 1.13
 
