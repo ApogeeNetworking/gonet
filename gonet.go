@@ -45,7 +45,7 @@ func (g *Gonet) Connect(retries int) error {
 			ssh.PasswordCallback(g.getPass),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         30 * time.Second,
+		Timeout:         10 * time.Second,
 	}
 	sshConf.SetDefaults()
 	// sshConf.Ciphers = []string{"chacha20-poly1305@openssh.com"}
@@ -55,7 +55,7 @@ func (g *Gonet) Connect(retries int) error {
 	if err != nil {
 		// Before we give up on a failed handshake
 		if strings.Contains(err.Error(), "handshake") {
-			// fmt.Println(err.Error())
+			fmt.Println(err.Error())
 			count := retries + 1
 			return g.Connect(count)
 		}
