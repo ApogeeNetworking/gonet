@@ -14,22 +14,37 @@ import (
 
 // Gonet Main Object
 type Gonet struct {
-	Username  string
-	Password  string
-	IP        string
-	HostName  string
-	Echo      bool
-	Prompt    string // Finds the Prompt # >
-	InputChan chan *string
-	StopChan  chan struct{}
-	Timeout   int
-	Model     string // 9500, 2960, N-Class
-	Vendor    string
-	client    *ssh.Client
-	session   *ssh.Session
-	stdin     io.WriteCloser
-	stdout    io.Reader
-	stderr    io.Reader
+	Username string
+	Password string
+	IP       string
+	HostName string
+	Model    string // 9500, 2960, N-Class
+	Vendor   string
+	// Enable Password if any
+	Enable  string
+	echo    bool
+	prompt  string // Finds the Prompt # >
+	input   chan *string
+	stop    chan struct{}
+	timeout int
+	client  *ssh.Client
+	session *ssh.Session
+	stdin   io.WriteCloser
+	stdout  io.Reader
+	stderr  io.Reader
+}
+
+// New creates an instance of a GoNet Client
+func New(host, user, pass string) *Gonet {
+	g := Gonet{
+		IP:       host,
+		Username: user,
+		Password: pass,
+		input:    make(chan *string),
+		stop:     make(chan struct{}),
+		timeout:  30,
+	}
+	return &g
 }
 
 func (g *Gonet) getPass() (string, error) {
@@ -88,24 +103,24 @@ func (g *Gonet) Connect(retries int) error {
 		return fmt.Errorf("Unable to setup stderr for session: %v", err)
 	}
 	go io.Copy(os.Stderr, g.stderr)
-	g.Echo = false
+	g.echo = false
 	// We might need to set this higher for some devices
-	if g.Timeout == 0 {
+	if g.timeout == 0 {
 		if strings.Contains(g.Model, "3850") {
-			g.Timeout = 60
+			g.timeout = 60
 		} else {
-			g.Timeout = 90
+			g.timeout = 90
 		}
 	}
 	err = sshSession.Shell()
-	g.InputChan = make(chan *string)
-	g.StopChan = make(chan struct{})
+	g.input = make(chan *string)
+	g.stop = make(chan struct{})
 	g.session = sshSession
 	// This is here because of gets rid of
 	// the --More-- "prompt" for read-outs
-	g.stdin.Write([]byte("terminal length 0\n"))
-	// io.WriteString(g.stdin, "term len 0\n")
-	// time.Sleep(time.Millisecond * 100)
+	if g.Vendor == "Cisco" || g.Vendor == "Dell" {
+		g.stdin.Write([]byte("terminal length 0\n"))
+	}
 	return nil
 }
 
@@ -148,58 +163,46 @@ func (g *Gonet) exec(cmd string) (string, error) {
 	// Pause the thread while the Reader prepares
 	// to rcv from the Writer
 	delay := 4 * time.Second
-	// if g.Vendor == "Dell" {
-	// 	delay = 10 * time.Second
-	// }
 	time.Sleep(delay)
-	go g.readln(bufOutput)
-
+	go g.read(bufOutput)
 	for {
 		select {
-		case output := <-g.InputChan:
-			{
-				if output == nil {
-					continue
+		case output := <-g.input:
+			switch {
+			case output == nil:
+				continue
+			case !g.echo:
+				result = *output
+				termLenRe := regexp.MustCompile(`term\slen\s\d|terminal\slength\s\d`)
+				termLenIdx := termLenRe.FindIndex([]byte(result))
+				if len(termLenIdx) > 0 {
+					result = result[termLenIdx[1]+1:]
 				}
-				if g.Echo == false {
-					result = *output
-					termLenRe := regexp.MustCompile(`term\slen\s\d|terminal\slength\s\d`)
-					termLenIdx := termLenRe.FindIndex([]byte(result))
-					if len(termLenIdx) > 0 {
-						result = result[termLenIdx[1]+1:]
-					}
-				} else {
-					result = *output
-				}
-				return result, nil
+			default:
+				result = *output
 			}
-		case <-g.StopChan:
-			{
-				g.Close()
-				return "", fmt.Errorf("EOF")
-			}
-		case <-time.After(time.Second * time.Duration(g.Timeout)):
-			{
-				fmt.Println("timeout on", g.IP)
-				g.Close()
-				return "", fmt.Errorf("timeout")
-			}
+			return result, nil
+		case <-g.stop:
+			g.Close()
+			return "", fmt.Errorf("EOF")
+		case <-time.After(time.Second * time.Duration(g.timeout)):
+			fmt.Println("timeout on", g.IP)
+			g.Close()
+			return "", fmt.Errorf("timeout")
 		}
 	}
 }
 
-func (g *Gonet) readln(r io.Reader) {
-	var re *regexp.Regexp
+func (g *Gonet) read(r io.Reader) {
 	// Setup how to find the Prompt in order
 	// Pass Data to our Input Channel
-	if g.Prompt == "" {
-		regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
-		re = regexp.MustCompile(regex)
-	} else {
-		re = regexp.MustCompile(g.Prompt + ".*?#.?$")
+	regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
+	re := regexp.MustCompile(regex)
+	if g.prompt != "" {
+		re = regexp.MustCompile(g.prompt + ".*?#.?$")
 	}
 	buf := make([]byte, 1000)
-	input := ""
+	var input string
 	// Read Data into the Buffer until All Data is Passed
 	for {
 		n, err := r.Read(buf)
@@ -207,18 +210,24 @@ func (g *Gonet) readln(r io.Reader) {
 			if err.Error() != "EOF" {
 				fmt.Println("ERROR", err)
 			}
-			g.StopChan <- struct{}{}
+			g.stop <- struct{}{}
 		}
 		input += string(buf[:n])
-		if len(input) >= 50 && re.MatchString(input[len(input)-45:]) {
+		if g.Vendor == "Aruba" && strings.Contains(string(buf[:n]), "Password") {
+			fmt.Println("**enter enable**")
+			g.stdin.Write([]byte(g.Enable + "\n"))
 			break
 		}
-		if len(input) < 50 && re.MatchString(input) {
+		if g.Vendor == "Aruba" && input[len(input)-1:] == "#" {
+			break
+		}
+		if g.Vendor != "Aruba" && (len(input) >= 50 && re.MatchString(input[len(input)-45:])) ||
+			(len(input) < 50 && re.MatchString(input)) {
 			break
 		}
 		// KEEPALIVE
-		g.InputChan <- nil
+		g.input <- nil
 	}
 	input = strings.Replace(input, "\r", "", -1)
-	g.InputChan <- &input
+	g.input <- &input
 }
