@@ -17,6 +17,7 @@ type Gonet struct {
 	Username string
 	Password string
 	IP       string
+	Port     string
 	HostName string
 	Model    string // 9500, 2960, N-Class
 	Vendor   string
@@ -51,54 +52,73 @@ func (g *Gonet) getPass() (string, error) {
 	return g.Password, nil
 }
 
+func (g *Gonet) keyInter(u, in string, q []string, e []bool) ([]string, error) {
+	// Just send the password back for all questions
+	answers := make([]string, len(q))
+	for i := range answers {
+		answers[i] = g.Password
+	}
+
+	return answers, nil
+}
+
 // Connect to the Device with Retries
 func (g *Gonet) Connect(retries int) error {
 	sshConf := &ssh.ClientConfig{
 		User: g.Username,
 		Auth: []ssh.AuthMethod{
+			ssh.KeyboardInteractive(g.keyInter),
 			ssh.Password(g.Password),
 			ssh.PasswordCallback(g.getPass),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		Timeout:         12 * time.Second,
 	}
 	sshConf.SetDefaults()
-	// sshConf.Ciphers = []string{"chacha20-poly1305@openssh.com"}
+	sshConf.Ciphers = append(sshConf.Ciphers, "aes128-cbc")
+	sshConf.KeyExchanges = append(sshConf.KeyExchanges, "diffie-hellman-group-exchange-sha1")
+	sshConf.KeyExchanges = append(sshConf.KeyExchanges, "diffie-hellman-group1-sha1")
 	// Some models of devices may not have the correct ciphers
 	// We could handle that hear
-	sshClient, err := ssh.Dial("tcp", g.IP+":22", sshConf)
+	if g.Port == "" {
+		g.Port = "22"
+	}
+	sshClient, err := ssh.Dial("tcp", g.IP+":"+g.Port, sshConf)
 	if err != nil {
 		// Before we give up on a failed handshake
 		if strings.Contains(err.Error(), "handshake") {
-			fmt.Println(err.Error())
-			count := retries + 1
+			count := retries - 1
+			if count == 0 {
+				return err
+			}
 			return g.Connect(count)
 		}
 		return err
 	}
-	sshSession, err := sshClient.NewSession()
+	g.client = sshClient
+	sshSession, err := g.client.NewSession()
 	if err != nil {
 		sshClient.Conn.Close()
 		return err
 	}
+	g.session = sshSession
 	modes := ssh.TerminalModes{
-		ssh.ECHO:          0,     // disable echoing
-		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+		ssh.ECHO:          0, // disable echoing
+		ssh.OCRNL:         0,
+		ssh.TTY_OP_ISPEED: 38400, // input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 38400, // output speed = 14.4kbaud
 	}
 
-	if err := sshSession.RequestPty("xterm", 0, 2000, modes); err != nil {
-		sshSession.Close()
+	if err := g.session.RequestPty("xterm", 0, 2000, modes); err != nil {
+		g.session.Close()
 		return fmt.Errorf("request for pseudo terminal failed: %s", err)
 	}
-
-	g.client = sshClient
-	g.stdin, _ = sshSession.StdinPipe()
+	g.stdin, _ = g.session.StdinPipe()
 	go io.Copy(g.stdin, os.Stdin)
 
-	g.stdout, _ = sshSession.StdoutPipe()
+	g.stdout, _ = g.session.StdoutPipe()
 
-	g.stderr, err = sshSession.StderrPipe()
+	g.stderr, err = g.session.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("Unable to setup stderr for session: %v", err)
 	}
@@ -112,13 +132,10 @@ func (g *Gonet) Connect(retries int) error {
 			g.timeout = 90
 		}
 	}
-	err = sshSession.Shell()
-	g.input = make(chan *string)
-	g.stop = make(chan struct{})
-	g.session = sshSession
+	err = g.session.Shell()
 	// This is here because of gets rid of
 	// the --More-- "prompt" for read-outs
-	if g.Vendor == "Cisco" || g.Vendor == "Dell" {
+	if g.Vendor == "Cisco" || g.Vendor == "Dell" || g.Model == "N1548P" {
 		g.stdin.Write([]byte("terminal length 0\n"))
 	}
 	return nil
@@ -132,6 +149,20 @@ func (g *Gonet) Close() {
 	if g.session != nil {
 		g.session.Close()
 	}
+}
+
+// NcSend ...
+func (g *Gonet) NcSend(data []byte) string {
+	g.session.RequestSubsystem("netconf")
+	g.stdin.Write(data)
+	time.Sleep(100 * time.Millisecond)
+	return ""
+}
+
+// SendConfig ...
+func (g *Gonet) SendConfig(cmd string) {
+	g.stdin.Write([]byte(cmd + "\n"))
+	time.Sleep(100 * time.Millisecond)
 }
 
 // SendCmd to a Device (sh ip int b)
@@ -158,16 +189,22 @@ func (g *Gonet) SendCmd(cmd string) (string, error) {
 
 func (g *Gonet) exec(cmd string) (string, error) {
 	var result string
+	input := make(chan *string)
+	stop := make(chan struct{})
+
 	bufOutput := bufio.NewReader(g.stdout)
 	g.stdin.Write([]byte(cmd + "\n"))
 	// Pause the thread while the Reader prepares
 	// to rcv from the Writer
-	delay := 4 * time.Second
+	delay := 1 * time.Second
+	if strings.Contains(g.Vendor, "Dell") || g.Model == "N1548P" {
+		delay = 4 * time.Second
+	}
 	time.Sleep(delay)
-	go g.read(bufOutput)
+	go g.read(bufOutput, input, stop)
 	for {
 		select {
-		case output := <-g.input:
+		case output := <-input:
 			switch {
 			case output == nil:
 				continue
@@ -182,7 +219,8 @@ func (g *Gonet) exec(cmd string) (string, error) {
 				result = *output
 			}
 			return result, nil
-		case <-g.stop:
+		case <-stop:
+			fmt.Println(<-stop)
 			g.Close()
 			return "", fmt.Errorf("EOF")
 		case <-time.After(time.Second * time.Duration(g.timeout)):
@@ -193,15 +231,19 @@ func (g *Gonet) exec(cmd string) (string, error) {
 	}
 }
 
-func (g *Gonet) read(r io.Reader) {
+func (g *Gonet) read(r *bufio.Reader, in chan *string, stop chan struct{}) {
 	// Setup how to find the Prompt in order
 	// Pass Data to our Input Channel
+
+	// regex := "[[:alnum:]](?:#|>)$"
+	// if g.Vendor == "Cisco" {
 	regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
+	// }
 	re := regexp.MustCompile(regex)
 	if g.prompt != "" {
 		re = regexp.MustCompile(g.prompt + ".*?#.?$")
 	}
-	buf := make([]byte, 1000)
+	buf := make([]byte, 2048)
 	var input string
 	// Read Data into the Buffer until All Data is Passed
 	for {
@@ -210,24 +252,16 @@ func (g *Gonet) read(r io.Reader) {
 			if err.Error() != "EOF" {
 				fmt.Println("ERROR", err)
 			}
-			g.stop <- struct{}{}
+			stop <- struct{}{}
 		}
 		input += string(buf[:n])
-		if g.Vendor == "Aruba" && strings.Contains(string(buf[:n]), "Password") {
-			fmt.Println("**enter enable**")
-			g.stdin.Write([]byte(g.Enable + "\n"))
-			break
-		}
-		if g.Vendor == "Aruba" && input[len(input)-1:] == "#" {
-			break
-		}
-		if g.Vendor != "Aruba" && (len(input) >= 50 && re.MatchString(input[len(input)-45:])) ||
+		if (len(input) >= 50 && re.MatchString(input[len(input)-45:])) ||
 			(len(input) < 50 && re.MatchString(input)) {
 			break
 		}
 		// KEEPALIVE
-		g.input <- nil
+		in <- nil
 	}
 	input = strings.Replace(input, "\r", "", -1)
-	g.input <- &input
+	in <- &input
 }
