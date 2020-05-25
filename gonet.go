@@ -129,7 +129,7 @@ func (g *Gonet) Connect(retries int) error {
 		if strings.Contains(g.Model, "3850") {
 			g.timeout = 60
 		} else {
-			g.timeout = 90
+			g.timeout = 500
 		}
 	}
 	err = g.session.Shell()
@@ -165,6 +165,13 @@ func (g *Gonet) SendConfig(cmd string) {
 	time.Sleep(100 * time.Millisecond)
 }
 
+// ExecEnable ...
+func (g *Gonet) ExecEnable() {
+	g.stdin.Write([]byte("enable\n"))
+	time.Sleep(100 * time.Millisecond)
+	g.stdin.Write([]byte(g.Enable + "\n"))
+}
+
 // SendCmd to a Device (sh ip int b)
 func (g *Gonet) SendCmd(cmd string) (string, error) {
 	output := ""
@@ -185,6 +192,15 @@ func (g *Gonet) SendCmd(cmd string) (string, error) {
 		output = strings.Join(outputLines, "\n")
 	}
 	return output, nil
+}
+
+// SendRawCmd used to receive complete output from CMD
+// Helps to determine exactly what the Prompt of the Device is
+func (g *Gonet) SendRawCmd(c string) string {
+	var output string
+	out, _ := g.exec(c)
+	output += out
+	return output
 }
 
 func (g *Gonet) exec(cmd string) (string, error) {
@@ -243,7 +259,7 @@ func (g *Gonet) read(r *bufio.Reader, in chan *string, stop chan struct{}) {
 	if g.prompt != "" {
 		re = regexp.MustCompile(g.prompt + ".*?#.?$")
 	}
-	buf := make([]byte, 2048)
+	buf := make([]byte, 204800000)
 	var input string
 	// Read Data into the Buffer until All Data is Passed
 	for {
@@ -259,6 +275,7 @@ func (g *Gonet) read(r *bufio.Reader, in chan *string, stop chan struct{}) {
 			(len(input) < 50 && re.MatchString(input)) {
 			break
 		}
+		fmt.Println(input)
 		// KEEPALIVE
 		in <- nil
 	}
