@@ -109,7 +109,7 @@ func (g *Gonet) Connect(retries int) error {
 		ssh.TTY_OP_OSPEED: 38400, // output speed = 14.4kbaud
 	}
 
-	if err := g.session.RequestPty("xterm", 0, 2000, modes); err != nil {
+	if err := g.session.RequestPty("xterm", 0, 5000, modes); err != nil {
 		g.session.Close()
 		return fmt.Errorf("request for pseudo terminal failed: %s", err)
 	}
@@ -275,7 +275,6 @@ func (g *Gonet) read(r *bufio.Reader, in chan *string, stop chan struct{}) {
 			(len(input) < 50 && re.MatchString(input)) {
 			break
 		}
-		fmt.Println(input)
 		// KEEPALIVE
 		in <- nil
 	}
