@@ -117,6 +117,7 @@ func (g *Gonet) Connect(retries int) error {
 	go io.Copy(g.stdin, os.Stdin)
 
 	g.stdout, _ = g.session.StdoutPipe()
+	// go io.Copy(os.Stdout, g.stdout)
 
 	g.stderr, err = g.session.StderrPipe()
 	if err != nil {
@@ -135,7 +136,11 @@ func (g *Gonet) Connect(retries int) error {
 	err = g.session.Shell()
 	// This is here because of gets rid of
 	// the --More-- "prompt" for read-outs
-	if g.Vendor == "Cisco" || g.Vendor == "Dell" || g.Model == "N1548P" {
+	switch {
+	case g.Model == "aireos":
+		g.stdin.Write([]byte("config paging disable\n"))
+		time.Sleep(500 * time.Millisecond)
+	case g.Vendor == "Cisco" || g.Vendor == "Dell" || g.Model == "N1548P":
 		g.stdin.Write([]byte("terminal length 0\n"))
 	}
 	return nil
@@ -250,11 +255,10 @@ func (g *Gonet) exec(cmd string) (string, error) {
 func (g *Gonet) read(r *bufio.Reader, in chan *string, stop chan struct{}) {
 	// Setup how to find the Prompt in order
 	// Pass Data to our Input Channel
-
-	// regex := "[[:alnum:]](?:#|>)$"
-	// if g.Vendor == "Cisco" {
 	regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
-	// }
+	if g.Model == "aireos" {
+		regex = `\s>.?$`
+	}
 	re := regexp.MustCompile(regex)
 	if g.prompt != "" {
 		re = regexp.MustCompile(g.prompt + ".*?#.?$")
