@@ -142,6 +142,13 @@ func (g *Gonet) Connect(retries int) error {
 		time.Sleep(500 * time.Millisecond)
 	case g.Vendor == "Cisco" || g.Vendor == "Dell" || g.Model == "N1548P":
 		g.stdin.Write([]byte("terminal length 0\n"))
+	case g.Vendor == "aruba":
+		g.stdin.Write([]byte("enable\n"))
+		time.Sleep(150 * time.Millisecond)
+		g.stdin.Write([]byte(g.Enable + "\n"))
+		time.Sleep(150 * time.Millisecond)
+		g.stdin.Write([]byte("no paging\n"))
+		time.Sleep(150 * time.Millisecond)
 	}
 	return nil
 }
@@ -256,8 +263,11 @@ func (g *Gonet) read(r *bufio.Reader, in chan *string, stop chan struct{}) {
 	// Setup how to find the Prompt in order
 	// Pass Data to our Input Channel
 	regex := "[[:alnum:]]>.?$|[[:alnum:]]#.?$|[[:alnum:]]\\$.?$"
-	if g.Model == "aireos" {
+	switch {
+	case g.Model == "aireos":
 		regex = `\s>.?$`
+	case g.Vendor == "aruba":
+		regex = `\)\s#.?$`
 	}
 	re := regexp.MustCompile(regex)
 	if g.prompt != "" {
