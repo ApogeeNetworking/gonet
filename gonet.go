@@ -72,7 +72,7 @@ func (g *Gonet) Connect(retries int) error {
 			ssh.PasswordCallback(g.getPass),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         12 * time.Second,
+		Timeout:         6 * time.Second,
 	}
 	sshConf.SetDefaults()
 	sshConf.Ciphers = append(sshConf.Ciphers, "aes128-cbc")
@@ -186,6 +186,9 @@ func (g *Gonet) ExecEnable() {
 
 // SendCmd to a Device (sh ip int b)
 func (g *Gonet) SendCmd(cmd string) (string, error) {
+	if g.client == nil || g.session == nil {
+		return "", fmt.Errorf("nothing to send to")
+	}
 	output := ""
 	out, err := g.exec(cmd)
 	if err != nil {
