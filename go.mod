@@ -1,10 +1,8 @@
-module github.com/drkchiloll/gonet
+module github.com/ApogeeNetworking/gonet
 
 go 1.13
 
 require (
-	github.com/stretchr/testify v1.4.0 // indirect
-	github.com/subosito/gotenv v1.2.0 // indirect
-	golang.org/x/crypto v0.0.0-20200406173513-056763e48d71
-	golang.org/x/sys v0.0.0-20200406155108-e3b113bbe6a4 // indirect
+	github.com/subosito/gotenv v1.2.0
+	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 )

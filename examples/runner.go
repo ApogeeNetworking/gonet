@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/drkchiloll/gonet"
+	"github.com/ApogeeNetworking/gonet"
 	"github.com/subosito/gotenv"
 )
 
