@@ -62,9 +62,14 @@ func (g *Gonet) keyInter(u, in string, q []string, e []bool) ([]string, error) {
 	return answers, nil
 }
 
-// Connect to the Device with Retries
-func (g *Gonet) Connect(retries int) error {
-	sshConf := &ssh.ClientConfig{
+// NewClient connects new ssh client
+func (g *Gonet) NewClient(cfg *ssh.ClientConfig) (*ssh.Client, error) {
+	return ssh.Dial("tcp", g.IP+":"+g.Port, cfg)
+}
+
+// GenerateClientConfig ...
+func (g *Gonet) GenerateClientConfig() *ssh.ClientConfig {
+	return &ssh.ClientConfig{
 		User: g.Username,
 		Auth: []ssh.AuthMethod{
 			ssh.KeyboardInteractive(g.keyInter),
@@ -74,6 +79,11 @@ func (g *Gonet) Connect(retries int) error {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         6 * time.Second,
 	}
+}
+
+// Connect to the Device with Retries
+func (g *Gonet) Connect(retries int) error {
+	sshConf := g.GenerateClientConfig()
 	sshConf.SetDefaults()
 	sshConf.Ciphers = append(sshConf.Ciphers, "aes128-cbc")
 	sshConf.KeyExchanges = append(sshConf.KeyExchanges, "diffie-hellman-group-exchange-sha1")
@@ -83,7 +93,7 @@ func (g *Gonet) Connect(retries int) error {
 	if g.Port == "" {
 		g.Port = "22"
 	}
-	sshClient, err := ssh.Dial("tcp", g.IP+":"+g.Port, sshConf)
+	sshClient, err := g.NewClient(sshConf)
 	if err != nil {
 		// Before we give up on a failed handshake
 		if strings.Contains(err.Error(), "handshake") {
